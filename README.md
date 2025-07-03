@@ -1,5 +1,27 @@
-# Firebase Studio
+# 🌾 BeejBaani – Hindi AI Chatbot for Farmers
 
-This is a NextJS starter in Firebase Studio.
+BeejBaani is a voice-enabled, Hindi-first chatbot powered by Gemini Pro and OpenWeather APIs.  
+It provides smart, real-time advice to farmers about crops, soil, and weather.
 
-To get started, take a look at src/app/page.tsx.
+## 🚀 Features
+
+- Hindi voice chatbot (Next.js + React)
+- Gemini Pro-based intelligent answers
+- Real-time weather integration
+- Image-based crop disease detection (coming soon)
+
+## 🧠 Tech Stack
+
+- ✅ Next.js (App Router)
+- ✅ Google Gemini API
+- ✅ OpenWeatherMap API
+- ✅ Firebase Hosting (via Firebase Studio)
+
+## 🛠 Setup Instructions
+
+```bash
+git clone https://github.com/shubham055555/beejbaani.git
+cd beejbaani
+npm install
+cp .env.example .env.local  # and fill your API keys
+npm run dev
