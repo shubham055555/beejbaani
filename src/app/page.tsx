@@ -4,19 +4,21 @@ import type { WeatherAndSoilAdviceOutput } from '@/ai/flows/get-weather-and-soil
 import { analyzeImageWithQuestion } from '@/ai/flows/analyze-image-with-question';
 import { getWeatherAndSoilAdvice } from '@/ai/flows/get-weather-and-soil-advice';
 import { answerAgriculturalQuestion } from '@/ai/flows/answer-agricultural-questions';
+import { findMissingCow } from '@/ai/flows/find-missing-cow';
 
 import * as React from 'react';
-import { Bot, Image as ImageIcon, Leaf, Mic, Send, User, BrainCircuit, X, Plus, MessageSquare } from 'lucide-react';
+import { Bot, Image as ImageIcon, Leaf, Mic, Send, User, BrainCircuit, X, Plus, MessageSquare, Search } from 'lucide-react';
 import Image from 'next/image';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { ChatMessage, type Message } from '@/components/chat-message';
 import { PlantLoader } from '@/components/loader';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger, SidebarFooter } from '@/components/ui/sidebar';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 interface Conversation {
   id: string;
@@ -33,9 +35,13 @@ export default function Home() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isRecording, setIsRecording] = React.useState(false);
   const [pendingImage, setPendingImage] = React.useState<{data: string; preview: string} | null>(null);
+  
+  const [isFindCowDialogOpen, setFindCowDialogOpen] = React.useState(false);
+  const [findCowImage, setFindCowImage] = React.useState<{data: string; preview: string} | null>(null);
 
   const speechRecognitionRef = React.useRef<any>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const findCowFileInputRef = React.useRef<HTMLInputElement>(null);
   const scrollAreaRef = React.useRef<HTMLDivElement>(null);
 
   const activeConversation = React.useMemo(() => 
@@ -59,7 +65,7 @@ export default function Home() {
       })
     );
   }, [activeConversationId]);
-
+  
   const handleSendMessage = React.useCallback(async (textOverride?: string) => {
     const isVoice = !!textOverride;
     const question = (textOverride || input).trim();
@@ -167,7 +173,7 @@ export default function Home() {
         setIsRecording(false);
       };
     }
-  }, [toast, handleSendMessage]);
+  }, [handleSendMessage, toast]);
   
   React.useEffect(() => {
     if (scrollAreaRef.current) {
@@ -220,6 +226,60 @@ export default function Home() {
       setIsLoading(false);
     }
   };
+  
+  const handleFindCowImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onloadend = () => {
+        const base64data = reader.result as string;
+        const previewUrl = URL.createObjectURL(file);
+        setFindCowImage({ data: base64data, preview: previewUrl });
+    };
+    event.target.value = "";
+  };
+
+  const handleFindCowSearch = async () => {
+    if (!findCowImage) return;
+
+    setIsLoading(true);
+    setFindCowDialogOpen(false);
+
+    const userMessage: Message = {
+        id: Date.now().toString(),
+        role: 'user',
+        type: 'image-request',
+        content: 'कृपया मेरी इस गाय को ढूंढने में मदद करें।',
+        imageUrl: findCowImage.preview,
+    };
+
+    addMessagesToActiveConversation([userMessage], 'गुमशुदा गाय की खोज');
+    
+    try {
+        const result = await findMissingCow({ photoDataUri: findCowImage.data });
+        addMessagesToActiveConversation([{
+            id: Date.now().toString(),
+            role: 'bot',
+            type: 'cow-match-report',
+            content: result
+        }]);
+    } catch (error) {
+        console.error('Error finding cow:', error);
+        addMessagesToActiveConversation([{
+            id: Date.now().toString(),
+            role: 'bot',
+            type: 'text',
+            content: 'माफ़ कीजिए, खोज करते समय एक त्रुटि हुई। कृपया बाद में पुनः प्रयास करें।'
+        }]);
+    } finally {
+        setIsLoading(false);
+        // Do not revoke findCowImage.preview here, it's used in the chat message
+        setFindCowImage(null);
+    }
+  };
+
 
   return (
     <SidebarProvider>
@@ -261,10 +321,57 @@ export default function Home() {
                 <Bot className="w-8 h-8 text-primary" />
                 <CardTitle className="font-headline">आपका कृषि सहायक</CardTitle>
               </div>
-              <Button variant="outline" size="lg" onClick={handleGetWeatherAdvice} className="font-headline">
-                <BrainCircuit className="w-5 h-5 mr-2" />
-                मौसम सलाह
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="lg" onClick={handleGetWeatherAdvice} className="font-headline">
+                  <BrainCircuit className="w-5 h-5 mr-2" />
+                  मौसम सलाह
+                </Button>
+                <Dialog open={isFindCowDialogOpen} onOpenChange={(open) => {
+                    setFindCowDialogOpen(open);
+                    if (!open) setFindCowImage(null);
+                }}>
+                    <DialogTrigger asChild>
+                        <Button variant="outline" size="lg" className="font-headline">
+                            <Search className="w-5 h-5 mr-2" />
+                            गाय खोजें
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[425px]">
+                        <DialogHeader>
+                            <DialogTitle>गुमशुदा मवेशी खोजें</DialogTitle>
+                            <DialogDescription>
+                            अपनी गुमशुदा गाय की एक साफ तस्वीर अपलोड करें। हम अपने डेटाबेस में मिलान खोजने की कोशिश करेंगे।
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-4">
+                            {findCowImage ? (
+                            <div className="relative mx-auto">
+                                <Image src={findCowImage.preview} alt="Cow preview" width={200} height={200} className="rounded-md border" data-ai-hint="cow" />
+                                <Button
+                                variant="destructive"
+                                size="icon"
+                                className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                                onClick={() => setFindCowImage(null)}
+                                >
+                                <X className="h-4 w-4" />
+                                </Button>
+                            </div>
+                            ) : (
+                            <Button variant="outline" onClick={() => findCowFileInputRef.current?.click()}>
+                                <ImageIcon className="mr-2" />
+                                तस्वीर अपलोड करें
+                            </Button>
+                            )}
+                            <input type="file" ref={findCowFileInputRef} onChange={handleFindCowImageUpload} accept="image/*" className="hidden" />
+                        </div>
+                        <DialogFooter>
+                            <Button onClick={handleFindCowSearch} disabled={!findCowImage || isLoading}>
+                            {isLoading ? 'खोज रहे हैं...' : 'खोजें'}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+              </div>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col">
               <ScrollArea className="flex-1 pr-4 -mr-4" ref={scrollAreaRef}>

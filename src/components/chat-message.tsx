@@ -2,17 +2,18 @@
 
 import * as React from 'react';
 import type { WeatherAndSoilAdviceOutput } from '@/ai/flows/get-weather-and-soil-advice';
+import type { FindMissingCowOutput } from '@/ai/flows/find-missing-cow';
 import Image from 'next/image';
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bot, User, Volume2 } from "lucide-react";
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
+import { Progress } from './ui/progress';
 
 export interface Message {
   id: string;
   role: 'user' | 'bot';
-  type: 'text' | 'image-request' | 'weather-report' | 'weather-request';
-  content: string | WeatherAndSoilAdviceOutput;
+  type: 'text' | 'image-request' | 'weather-report' | 'weather-request' | 'cow-match-report';
+  content: string | WeatherAndSoilAdviceOutput | FindMissingCowOutput;
   imageUrl?: string;
   isVoice?: boolean;
 }
@@ -58,6 +59,28 @@ const renderContent = (message: Message) => {
                 </div>
             </div>
         )
+    case 'cow-match-report':
+      const result = message.content as FindMissingCowOutput;
+      if (result.noMatchFound || result.matches.length === 0) {
+        return <p>माफ़ कीजिए, आपके द्वारा अपलोड की गई गाय से मिलता-जुलता कोई जानवर नहीं मिला।</p>;
+      }
+      return (
+        <div className="space-y-4">
+          <h4 className="font-bold">मिलान की संभावनाएं</h4>
+          {result.matches.map((match, index) => (
+            <div key={index} className="p-3 rounded-md border bg-card-foreground/5 dark:bg-card-foreground/10">
+              <p><strong>स्थान:</strong> {match.location}</p>
+              <p><strong>विवरण:</strong> {match.description}</p>
+              <p><strong>संपर्क:</strong> {match.contact}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <strong className="flex-shrink-0 text-sm">समानता:</strong>
+                <Progress value={match.similarity} className="w-full" />
+                <span className="font-mono text-sm font-semibold">{match.similarity}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
     default:
       return null;
   }
