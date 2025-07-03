@@ -1,12 +1,12 @@
 'use client';
 
-import type { IdentifyCropDiseaseOutput, WeatherAndSoilAdviceOutput } from '@/ai/flows/identify-crop-disease';
-import { identifyCropDisease } from '@/ai/flows/identify-crop-disease';
+import type { WeatherAndSoilAdviceOutput } from '@/ai/flows/get-weather-and-soil-advice';
+import { analyzeImageWithQuestion } from '@/ai/flows/analyze-image-with-question';
 import { getWeatherAndSoilAdvice } from '@/ai/flows/get-weather-and-soil-advice';
 import { answerAgriculturalQuestion } from '@/ai/flows/answer-agricultural-questions';
 
 import * as React from 'react';
-import { Bot, Image as ImageIcon, Leaf, Mic, Send, User, BrainCircuit } from 'lucide-react';
+import { Bot, Image as ImageIcon, Leaf, Mic, Send, User, BrainCircuit, X } from 'lucide-react';
 import Image from 'next/image';
 
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ export default function Home() {
   const [input, setInput] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [isRecording, setIsRecording] = React.useState(false);
+  const [pendingImage, setPendingImage] = React.useState<{data: string; preview: string} | null>(null);
 
   const speechRecognitionRef = React.useRef<any>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -72,48 +73,64 @@ export default function Home() {
   };
 
   const handleSendMessage = async () => {
-    if (!input.trim() && messages.length > 0 && messages[messages.length - 1].type !== 'text') {
+    const question = input.trim();
+    if (!question) {
+        if (pendingImage) {
+            toast({ title: 'सवाल आवश्यक है', description: 'कृपया संलग्न तस्वीर के बारे में एक सवाल पूछें।', variant: 'destructive' });
+        }
         return;
     }
-    const question = input;
+
     const isVoice = isRecording;
-    addMessage('user', 'text', question, undefined, isVoice);
     setInput('');
     setIsLoading(true);
 
-    try {
-      const result = await answerAgriculturalQuestion({ question });
-      addMessage('bot', 'text', result.answer);
-    } catch (error) {
-      console.error(error);
-      addMessage('bot', 'text', 'माफ़ कीजिए, मुझे आपका सवाल समझ नहीं आया।');
-    } finally {
-      setIsLoading(false);
+    if (pendingImage) {
+        addMessage('user', 'image-request', question, pendingImage.preview, isVoice);
+        const imageDataUri = pendingImage.data;
+        const previewUrl = pendingImage.preview;
+        setPendingImage(null);
+
+        try {
+            const result = await analyzeImageWithQuestion({ photoDataUri: imageDataUri, question });
+            addMessage('bot', 'text', result.answer);
+        } catch (error) {
+            console.error(error);
+            addMessage('bot', 'text', 'माफ़ कीजिए, मैं इस तस्वीर का विश्लेषण नहीं कर सका।');
+        } finally {
+            URL.revokeObjectURL(previewUrl);
+            setIsLoading(false);
+        }
+    } else {
+        addMessage('user', 'text', question, undefined, isVoice);
+        try {
+            const result = await answerAgriculturalQuestion({ question });
+            addMessage('bot', 'text', result.answer);
+        } catch (error) {
+            console.error(error);
+            addMessage('bot', 'text', 'माफ़ कीजिए, मुझे आपका सवाल समझ नहीं आया।');
+        } finally {
+            setIsLoading(false);
+        }
     }
   };
 
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const previewUrl = URL.createObjectURL(file);
-    addMessage('user', 'image-request', 'कृपया इस तस्वीर का विश्लेषण करें।', previewUrl);
-    setIsLoading(true);
-
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onloadend = async () => {
+    reader.onloadend = () => {
       const base64data = reader.result as string;
-      try {
-        const result = await identifyCropDisease({ photoDataUri: base64data });
-        addMessage('bot', 'disease-report', result);
-      } catch (error) {
-        console.error(error);
-        addMessage('bot', 'text', 'माफ़ कीजिए, मैं इस तस्वीर का विश्लेषण नहीं कर सका।');
-      } finally {
-        setIsLoading(false);
-      }
+      const previewUrl = URL.createObjectURL(file);
+      setPendingImage({ data: base64data, preview: previewUrl });
+      toast({
+        title: 'तस्वीर संलग्न है',
+        description: 'अब आप अपना सवाल पूछ सकते हैं।',
+      });
     };
+    event.target.value = "";
   };
   
   const handleGetWeatherAdvice = async () => {
@@ -170,7 +187,24 @@ export default function Home() {
             </div>
           </ScrollArea>
         </CardContent>
-        <CardFooter className="pt-6">
+        <CardFooter className="pt-6 flex-col items-stretch gap-4">
+          {pendingImage && (
+            <div className="relative w-24">
+                <p className="text-sm text-muted-foreground mb-1">संलग्न तस्वीर:</p>
+                <Image src={pendingImage.preview} alt="Pending upload" width={80} height={80} className="rounded-md border" />
+                <Button
+                variant="destructive"
+                size="icon"
+                className="absolute -top-3 -right-3 h-7 w-7 rounded-full"
+                onClick={() => {
+                    URL.revokeObjectURL(pendingImage.preview);
+                    setPendingImage(null);
+                }}
+                >
+                <X className="h-4 w-4" />
+                </Button>
+            </div>
+          )}
           <div className="flex w-full gap-2">
             <Button variant="outline" size="icon" className="h-12 w-12 shrink-0" onClick={() => fileInputRef.current?.click()}>
               <ImageIcon className="w-6 h-6" />
@@ -181,7 +215,7 @@ export default function Home() {
               <Input
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                placeholder="अपना सवाल यहाँ लिखें..."
+                placeholder={pendingImage ? "तस्वीर के बारे में पूछें..." : "अपना सवाल यहाँ लिखें..."}
                 className="h-12 text-base"
                 disabled={isLoading}
               />

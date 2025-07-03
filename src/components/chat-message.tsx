@@ -1,19 +1,18 @@
 'use client';
 
 import * as React from 'react';
-import type { IdentifyCropDiseaseOutput, WeatherAndSoilAdviceOutput } from '@/ai/flows/identify-crop-disease';
+import type { WeatherAndSoilAdviceOutput } from '@/ai/flows/get-weather-and-soil-advice';
 import Image from 'next/image';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bot, User, Volume2 } from "lucide-react";
 import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 
 export interface Message {
   id: string;
   role: 'user' | 'bot';
-  type: 'text' | 'image-request' | 'disease-report' | 'weather-report' | 'weather-request';
-  content: string | IdentifyCropDiseaseOutput | WeatherAndSoilAdviceOutput;
+  type: 'text' | 'image-request' | 'weather-report' | 'weather-request';
+  content: string | WeatherAndSoilAdviceOutput;
   imageUrl?: string;
   isVoice?: boolean;
 }
@@ -33,45 +32,17 @@ const renderContent = (message: Message) => {
           {message.imageUrl && (
             <Image
               src={message.imageUrl}
-              alt="Uploaded crop"
+              alt="Uploaded content"
               width={200}
               height={200}
               className="rounded-lg border-2 border-primary"
-              data-ai-hint="crop plant"
+              data-ai-hint="farm animal"
             />
           )}
         </div>
       );
     case 'weather-request':
         return <p className="leading-relaxed">{message.content as string}</p>;
-    case 'disease-report':
-        const report = message.content as IdentifyCropDiseaseOutput;
-        return (
-            <div className="space-y-3">
-                <h4 className="font-bold">फसल रोग की पहचान रिपोर्ट</h4>
-                <p>
-                    <Badge variant={report.diseaseIdentification.diseaseDetected ? "destructive" : "default"}>
-                        {report.diseaseIdentification.diseaseDetected ? "रोग का पता चला" : "कोई रोग नहीं मिला"}
-                    </Badge>
-                </p>
-                {report.diseaseIdentification.diseaseDetected && (
-                    <>
-                        <div>
-                            <h5 className="font-semibold">संभावित रोग:</h5>
-                            <ul className="list-disc pl-5">
-                                {report.diseaseIdentification.likelyDiseases.map((disease, i) => (
-                                    <li key={i}>{disease} (विश्वास: {(report.diseaseIdentification.confidenceLevels[i] * 100).toFixed(0)}%)</li>
-                                ))}
-                            </ul>
-                        </div>
-                        <div>
-                            <h5 className="font-semibold">सिफारिशें:</h5>
-                            <p>{report.recommendations}</p>
-                        </div>
-                    </>
-                )}
-            </div>
-        );
     case 'weather-report':
         const weather = message.content as WeatherAndSoilAdviceOutput;
         return(
