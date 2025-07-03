@@ -43,6 +43,70 @@ export default function Home() {
     [conversations, activeConversationId]
   );
   
+  const addMessagesToActiveConversation = React.useCallback((newMessages: Message[], newTitle?: string) => {
+    if (!activeConversationId) return;
+
+    setConversations(prevConvos => 
+      prevConvos.map(c => {
+        if (c.id === activeConversationId) {
+          const updatedConversation = { ...c, messages: [...c.messages, ...newMessages] };
+          if (c.messages.length === 0 && newTitle) {
+            updatedConversation.title = newTitle;
+          }
+          return updatedConversation;
+        }
+        return c;
+      })
+    );
+  }, [activeConversationId]);
+
+  const handleSendMessage = React.useCallback(async (textOverride?: string) => {
+    const isVoice = !!textOverride;
+    const question = (textOverride || input).trim();
+
+    if (!question) {
+      if (pendingImage) {
+        toast({ title: 'सवाल आवश्यक है', description: 'कृपया संलग्न तस्वीर के बारे में एक सवाल पूछें।', variant: 'destructive' });
+      }
+      return;
+    }
+
+    setInput('');
+    setIsLoading(true);
+
+    if (pendingImage) {
+      const userMessage: Message = { id: Date.now().toString(), role: 'user', type: 'image-request', content: question, imageUrl: pendingImage.preview, isVoice };
+      const imageDataUri = pendingImage.data;
+      const previewUrl = pendingImage.preview;
+      setPendingImage(null);
+
+      addMessagesToActiveConversation([userMessage], question.substring(0, 30));
+
+      try {
+        const result = await analyzeImageWithQuestion({ photoDataUri: imageDataUri, question });
+        addMessagesToActiveConversation([{ id: Date.now().toString(), role: 'bot', type: 'text', content: result.answer }]);
+      } catch (error) {
+        console.error(error);
+        addMessagesToActiveConversation([{ id: Date.now().toString(), role: 'bot', type: 'text', content: 'माफ़ कीजिए, मैं इस तस्वीर का विश्लेषण नहीं कर सका।' }]);
+      } finally {
+        if(previewUrl) URL.revokeObjectURL(previewUrl);
+        setIsLoading(false);
+      }
+    } else {
+      const userMessage: Message = { id: Date.now().toString(), role: 'user', type: 'text', content: question, isVoice };
+      addMessagesToActiveConversation([userMessage], question.substring(0, 30));
+      try {
+        const result = await answerAgriculturalQuestion({ question });
+        addMessagesToActiveConversation([{ id: Date.now().toString(), role: 'bot', type: 'text', content: result.answer }]);
+      } catch (error) {
+        console.error(error);
+        addMessagesToActiveConversation([{ id: Date.now().toString(), role: 'bot', type: 'text', content: 'माफ़ कीजिए, मुझे आपका सवाल समझ नहीं आया।' }]);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  }, [input, pendingImage, toast, addMessagesToActiveConversation]);
+
   const handleNewChat = React.useCallback(() => {
     const newId = Date.now().toString();
     const newConversation: Conversation = { id: newId, title: "नई बातचीत", messages: [] };
@@ -91,8 +155,8 @@ export default function Home() {
       speechRecognitionRef.current.continuous = false;
       speechRecognitionRef.current.lang = 'hi-IN';
       speechRecognitionRef.current.onresult = (event: any) => {
-        setInput(event.results[0][0].transcript);
-        setIsRecording(false);
+        const transcript = event.results[0][0].transcript;
+        handleSendMessage(transcript);
       };
       speechRecognitionRef.current.onerror = (event: any) => {
         console.error('Speech recognition error', event);
@@ -103,7 +167,7 @@ export default function Home() {
         setIsRecording(false);
       };
     }
-  }, [toast]);
+  }, [toast, handleSendMessage]);
   
   React.useEffect(() => {
     if (scrollAreaRef.current) {
@@ -114,75 +178,12 @@ export default function Home() {
     }
   }, [activeConversation?.messages]);
 
-  const addMessagesToActiveConversation = (newMessages: Message[], newTitle?: string) => {
-    if (!activeConversationId) return;
-
-    setConversations(prevConvos => 
-      prevConvos.map(c => {
-        if (c.id === activeConversationId) {
-          const updatedConversation = { ...c, messages: [...c.messages, ...newMessages] };
-          if (c.messages.length === 0 && newTitle) {
-            updatedConversation.title = newTitle;
-          }
-          return updatedConversation;
-        }
-        return c;
-      })
-    );
-  };
-
   const handleVoiceInput = () => {
     if (isRecording) {
       speechRecognitionRef.current?.stop();
     } else {
       speechRecognitionRef.current?.start();
       setIsRecording(true);
-    }
-  };
-
-  const handleSendMessage = async () => {
-    const question = input.trim();
-    if (!question) {
-        if (pendingImage) {
-            toast({ title: 'सवाल आवश्यक है', description: 'कृपया संलग्न तस्वीर के बारे में एक सवाल पूछें।', variant: 'destructive' });
-        }
-        return;
-    }
-
-    const isVoice = isRecording;
-    setInput('');
-    setIsLoading(true);
-
-    if (pendingImage) {
-        const userMessage: Message = { id: Date.now().toString(), role: 'user', type: 'image-request', content: question, imageUrl: pendingImage.preview, isVoice };
-        const imageDataUri = pendingImage.data;
-        const previewUrl = pendingImage.preview;
-        setPendingImage(null);
-
-        addMessagesToActiveConversation([userMessage], question.substring(0, 30));
-
-        try {
-            const result = await analyzeImageWithQuestion({ photoDataUri: imageDataUri, question });
-            addMessagesToActiveConversation([{ id: Date.now().toString(), role: 'bot', type: 'text', content: result.answer }]);
-        } catch (error) {
-            console.error(error);
-            addMessagesToActiveConversation([{ id: Date.now().toString(), role: 'bot', type: 'text', content: 'माफ़ कीजिए, मैं इस तस्वीर का विश्लेषण नहीं कर सका।' }]);
-        } finally {
-            URL.revokeObjectURL(previewUrl);
-            setIsLoading(false);
-        }
-    } else {
-        const userMessage: Message = { id: Date.now().toString(), role: 'user', type: 'text', content: question, isVoice };
-        addMessagesToActiveConversation([userMessage], question.substring(0, 30));
-        try {
-            const result = await answerAgriculturalQuestion({ question });
-            addMessagesToActiveConversation([{ id: Date.now().toString(), role: 'bot', type: 'text', content: result.answer }]);
-        } catch (error) {
-            console.error(error);
-            addMessagesToActiveConversation([{ id: Date.now().toString(), role: 'bot', type: 'text', content: 'माफ़ कीजिए, मुझे आपका सवाल समझ नहीं आया।' }]);
-        } finally {
-            setIsLoading(false);
-        }
     }
   };
 
